@@ -26,8 +26,10 @@ double raw_grad_finder(double x1[], double y1[], double x2[], double y2[], uint 
 
 tuple<double, double, double, double> line_fitter(double x[], double y[], double x_err[], double y_err[], uint n){
   double coef,cons,coef_err,cons_err;
-  double s_x = 0, s_y=0, s_xy=0, s_xx=0, ss_xx=0, ss_yy=0, ss_xy=0, s=0,s_tt=0;
-  double a[n], sigma[n];
+  double s_x = 0, s_y=0, s_xy=0, s_xx=0, s=0,s_tt=0;
+  double *a, *sigma;
+  a = new double [n]; sigma = new double [n];
+
   for (uint i=0; i<n; i++){sigma[i] = sqrt(x_err[i]*x_err[i]+y_err[i]*y_err[i]);}
   for (uint i=0; i<n; i++){
     s_xy += x[i]*y[i]/(sigma[i]*sigma[i]);
@@ -43,6 +45,7 @@ tuple<double, double, double, double> line_fitter(double x[], double y[], double
                            cons = (s_y-s_x*coef)/s; //c
                            coef_err = sqrt(1/s_tt);
                            cons_err = sqrt(1/s*(1+s_x*s_x/(s*s_tt)));
+  delete[] a,sigma;
   return make_tuple(coef,cons,coef_err,cons_err);
 }
 
@@ -50,23 +53,27 @@ tuple<int,int,int,int> closest_finder(double A[], double B[], double C[], double
   double diff=DBL_MAX;
   uint m0=0, m1=0, m2=0, m3=0;
   uint min0=0, min1=0, min2=0, min3=0;
-
-  while (m0<n && m0<n && m0<n && m0<n){
+  // printf("eo");
+  while (m0<n && m1<n && m2<n && m3<n){
     double minimum = min(A[m0], min(B[m1], min(C[m2],D[m3])));
     double maximum = max(A[m0], max(B[m1], max(C[m2],D[m3])));
-
+    // printf("%f",minimum);
       if (maximum-minimum < diff){
         min0 = m0, min1 = m1, min2 = m2, min3 = m3;
         diff = maximum-minimum;
       }
 
-      if (diff == 0) break;
+       if (diff == 0) break;
+      //{
+      //   min0 =0, min1 = 0, min2 = 0, min3 =0;
+      // }
 
       if      (A[m0] == minimum) m0++;
       else if (B[m1] == minimum) m1++;
       else if (C[m2] == minimum) m2++;
       else                       m3++;
   }
+
   return make_tuple(min0, min1, min2, min3);
 }
 
@@ -93,6 +100,7 @@ vector<pair<double,uint> > array_sorter(double arr[], uint n){
   vector<pair<double, uint> > vp;
   for (uint i=0; i<n; i++) {vp.push_back(make_pair(arr[i], i));}
   sort(vp.begin(), vp.end());
+  vp.clear();
   return vp;
 }
 
@@ -103,8 +111,9 @@ tuple<double, double> incl_angle_finder(double m, double m_err){
 }
 
 tuple<double, double> avg_vel_finder(double m, double m_err, double c, double c_err, double t[], double x[], double y[]){
-  double vel[8], vel_err[8], vel_wgt[8], sum_vel_wgt=0;
-  double vel_avg=0, vel_avg_err;
+  double *vel, *vel_err, *vel_wgt;
+  vel = new double [8]; vel_err= new double [8]; vel_wgt= new double [8];
+  double sum_vel_wgt=0, vel_avg=0, vel_avg_err;
 
   for (uint i=0; i<8; i++){
     vel[i]     = 1/(t[i])*abs(m*x[i]-y[i]+c)/(sqrt(m*m+1));
@@ -120,6 +129,7 @@ tuple<double, double> avg_vel_finder(double m, double m_err, double c, double c_
   for (uint i=0; i<8; i++){sum_vel_wgt += vel_wgt[i];}
   for (uint i=0; i<8; i++){vel_avg  += (vel_wgt[i]*vel[i])/sum_vel_wgt;}
   vel_avg_err = 1/(sqrt(sum_vel_wgt));
+  delete[] vel, vel_err, vel_wgt;
   return make_tuple(vel_avg, vel_avg_err);
 }
 
@@ -151,6 +161,7 @@ tuple<double, double, double, double> run_one_event(FILE * f, uint event){
     grad[i] = new double [m];
   }
 
+
   // double x_track_p[n], y_track_p[n];
   // double x_track_m[n], y_track_m[n];
   // double grad[n][m];
@@ -175,7 +186,9 @@ tuple<double, double, double, double> run_one_event(FILE * f, uint event){
     grad[k][1] = raw_grad_finder(x_track_m, y_track_m, x_track_m, y_track_m, k, kp);
     grad[k][2] = raw_grad_finder(x_track_m, y_track_m, x_track_p, y_track_p, k, kp);
     grad[k][3] = raw_grad_finder(x_track_p, y_track_p, x_track_m, y_track_m, k, kp);
+    // printf("%f %f %f %f\n", grad[k][0], grad[k][1], grad[k][2], grad[k][3]);
   }
+
 
   vector<pair<double, uint> > g0_sort = array_sorter(grad[0], m);
   vector<pair<double, uint> > g1_sort = array_sorter(grad[1], m);
@@ -202,6 +215,7 @@ tuple<double, double, double, double> run_one_event(FILE * f, uint event){
 
   uint gs0, gs1, gs2, gs3, g0, g1, g2, g3;
   tie(gs0, gs1, gs2, gs3) = closest_finder(grad0_sorted, grad1_sorted, grad2_sorted, grad3_sorted, m);
+  // return make_tuple (grad[0][0], grad[0][1], grad[0][2], grad[0][3]);
 
   for (uint g=0; g<4; g++){
     if (gs0 == g) {g0 = grad0_sorted_index[g];}
@@ -232,36 +246,38 @@ tuple<double, double, double, double> run_one_event(FILE * f, uint event){
   tie(angle,angle_err)  = incl_angle_finder(coef, coef_err);
   tie(vel_avg,vel_avg_err) = avg_vel_finder(coef, coef_err, cons, cons_err, t, x, y);
 
-  for(int i=0; i<n; ++i) {
+  for(uint i=0; i<n; ++i) {
     delete[] grad[i];
 }
 // Free the array of pointers
-delete [] hits, t, x, y;
+delete[] hits, t, x, y;
 delete[] grad, x_track_p, y_track_p, x_track_m, y_track_m,
          grad0_sorted, grad0_sorted_index, grad1_sorted, grad1_sorted_index, grad2_sorted, grad2_sorted_index, grad3_sorted, grad3_sorted_index,
          grad_true, x_track, y_track, x_track_err, y_track_err;
 
   // printf("%f %f %f %f", coef, coef_err, cons, cons_err);
   return make_tuple(angle, angle_err, vel_avg, vel_avg_err);
-
 }
 
 int main() {
   // FILE * f=fopen("onetrack.raw","rb");
 
-  uint e = 10;
-  double angle[e], angle_err[e], vel[e], vel_err[e];
+  uint e = 1000000;
+  double *angle, *angle_err, *vel, *vel_err;
 
   // auto start = high_resolution_clock::now();
   double angle0, angle_err0, vel0, vel_err0,angle1, angle_err1, vel1, vel_err1, angle2, angle_err2, vel2, vel_err2, angle3, angle_err3, vel3, vel_err3;
   FILE * f=fopen("manytracks.raw","rb");
-  tie(angle0, angle_err0, vel0, vel_err0) =run_one_event(f,1);
-
+  tie(angle0, angle_err0, vel0, vel_err0) = run_one_event(f,999999);
+  angle = new double [e], angle_err= new double [e], vel= new double [e], vel_err= new double [e];
   printf("%d angle = %f(%f), mean_velelocity = %f(%f)\n", 0, angle0, angle_err0, vel0, vel_err0);
   uint i=0;
   while (i<e){
+
+
     tie(angle[i], angle_err[i], vel[i], vel_err[i]) = run_one_event(f,i);
     // output[i]  = run_one_event(f,i);
+
      printf("%d angle = %f(%f), mean_velelocity = %f(%f)\n", i, angle[i], angle_err[i], vel[i], vel_err[i]);
      i +=1;
   }
